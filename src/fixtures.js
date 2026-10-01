@@ -16,10 +16,20 @@ Object.assign(scenarios,{
  leg('Harbor → Northstar: limited result','OSAT-DEMO','RECIPIENT-DEMO','pcn','mesh',{lotId:'LOT-DEMO-42',testStatus:'pass'}),
  leg('Northstar → Aster: review decision','RECIPIENT-DEMO','OWNER-DEMO','mesh','pcn',{lotId:'LOT-DEMO-42',reviewResult:'accepted for example review',evaluatorId:'REVIEWER-DEMO'})]}
 });
+scenarios.S07={name:'Revised OSAT plan and approved results',short:'Share an approved revision',description:'Aster sends an approved revised plan to Harbor. Harbor returns results to Aster. Aster then shares a limited summary with Northstar. Each owner must approve their own handoff. Translation, trust and business checks are separate.',legs:[
+ leg('Aster → Harbor: approved test plan','OWNER-DEMO','OSAT-DEMO','mesh','pcn',{lotId:'LOT-DEMO-42',planObjectId:'PLAN-DEMO-42',planRevision:2,maxVoltageV:1.2}),
+ leg('Harbor → Aster: test results','OSAT-DEMO','OWNER-DEMO','pcn','mesh',{lotId:'LOT-DEMO-42',planObjectId:'PLAN-DEMO-42',planRevision:2,testStatus:'pass',measuredVoltageV:1.18}),
+ leg('Aster → Northstar: permitted summary','OWNER-DEMO','RECIPIENT-DEMO','pcn','mesh',{lotId:'LOT-DEMO-42',planObjectId:'PLAN-DEMO-42',planRevision:2,testStatus:'pass'})]};
 export function currentScenario(s){return scenarios[s.scenario].legs?.[s.legIndex??0]??scenarios[s.scenario];}
 export function handoffs(id){return scenarios[id].legs??[scenarios[id]];}
 
 export const faults = [
+ ['F12','Old revision requested','The request uses an older version, not the approved one.','Data owner','Choose the approved revision and ask for approval again.'],
+ ['F13','Wrong units after translation','The message uses the wrong measurement units.','Mapping owner','Correct and review the mapping, then check the translated fields again.'],
+ ['F14','Action not allowed','The relationship does not permit the requested action.','Data owner','Review the requested action and explicitly grant permission before retrying.'],
+ ['F15','Agent verification failed','The execution check fails, so protected data stays locked.','Security reviewer','Review the execution environment and provide acceptable simulated evidence.'],
+ ['F16','Approval notification missed','The owner has not acknowledged the approval request.','Data owner','Resend the notification and wait for an explicit decision.'],
+ ['F17','Software result is incorrect','Approved software produces a result that fails business review.','Quality reviewer','Keep the rejected result in history and review a corrected result.'],
  ['none','No failure','Let the exchange finish normally.','None','No recovery needed.'],
  ['F01','Sign-in expired','The sender’s sign-in is too old to use.','Identity owner','Renew the simulated sign-in and check again.'],
  ['F02','Wrong sign-in details','The sign-in came from the wrong service or was meant for another app.','Identity owner','Use the expected sign-in service and app, then check again.'],
@@ -34,7 +44,7 @@ export const faults = [
  ['F11a','Security evidence too old','The security evidence is too old to rely on.','Security reviewer','Provide newer simulated security evidence and check again.'],
  ['F11b','Messages in the wrong order','The second message arrives before the first.','Integration operator','Find and check the first message before processing the second.'],
  ['F11c','Reply sent around again','A delivery reply is mistaken for new data and sent around again.','Integration operator','Stop the repeated reply. Do not treat it as new data.']
-].map(([id,name,description,role,recovery])=>({id,name,description,role,recovery}));
+].map(([id,name,description,role,recovery])=>({id,name,description,role,recovery})).sort((a,b)=>(a.id==='none'?-1:b.id==='none'?1:0));
 export const stages = ['Request','Identity','Mapping','Message','Permission','Integrity','Delivery','Receipt'];
 export function fixture(scenario='S01',legIndex=0) {
  const c=scenarios[scenario].legs?.[legIndex]??scenarios[scenario];
@@ -44,11 +54,11 @@ export function fixture(scenario='S01',legIndex=0) {
 
 export const stageGuide = [
  {what:'The owner starts an exchange and selects the information to send.',goal:'Make the sender, recipient and purpose clear.'},
- {what:'Check the sender’s simulated sign-in details and whether they are still valid.',goal:'Establish who is making the request. Sign-in alone does not allow sharing.'},
+ {what:'Check the sender’s simulated sign-in details and, separately, the proposed Mesh agent’s execution evidence.',goal:'Identify the caller and check the agent environment. Neither check proves the submitted facts.'},
  {what:'Match the Mesh account to the correct PCN party, organization and asset.',goal:'Connect the right records without mixing up organizations.'},
- {what:'Check that the message has the required information, source context and order.',goal:'Catch incomplete or out-of-order messages before they are processed.'},
- {what:'Check the owner’s sharing rules for this recipient, data, purpose and time.',goal:'Send only what the owner allows. Check again just before delivery.'},
- {what:'Compare the data with the version that was reviewed, using a simulated integrity check.',goal:'Detect changes after review. This does not prove the data is true.'},
+ {what:'Check required fields, source context and order. The proposed translation agent maps fields and checks units.',goal:'Catch incomplete or out-of-order messages before they are processed.'},
+ {what:'Check the relationship, allowed action and owner’s sharing rules. In the revised OSAT scenario, notify the owner and wait for approval.',goal:'Send only what the owner allows. Check again just before delivery.'},
+ {what:'Check the approved object revision, the reviewed packet and the example business rules.',goal:'Catch old revisions, altered data and incorrect results. Approved software can still contain a bug.'},
  {what:'Send the allowed information through the proposed bridge to the receiving service.',goal:'Make one permitted delivery or record. Stop safely if the service is unavailable.'},
  {what:'Send a result or delivery acknowledgment back through the bridge.',goal:'Tell the sender what happened. A missing reply needs a status check, not a blind resend.'}
 ];

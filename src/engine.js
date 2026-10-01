@@ -1,8 +1,9 @@
+import {integrationState,integrationGate,repairIntegration,integrationEvidence,note} from './integration.js';
 import {sharingParties,organizationName} from './parties.js';
 import {scenarios,faults,stages,fixture,currentScenario,handoffs} from './fixtures.js';
-export function create(scenario='S01',fault='none',authoritativeOutcome='committed',faultLeg=0) {
+export function create(scenario='S01',fault='none',authoritativeOutcome='committed',faultLeg=0,storageMode='external') {
  if(!scenarios[scenario]||!faults.some(f=>f.id===fault)||(fault==='F10'&&scenario!=='S01'))throw Error('Unsupported scenario / failure');
- return {scenario,fault,legIndex:0,faultLeg,...fixture(scenario),tick:0,stage:0,status:'ready',effects:0,attempts:0,trace:[],deliveries:[],registry:{},operationId:'OP-DEMO-1',runRevision:1,reviewedPayload:JSON.stringify(handoffs(scenario)[0].payload),lastStage:0,repaired:false,message:'Ready. Step through the exchange or press Play.',active:'source',authoritativeOutcome};
+ const s={scenario,fault,storageMode,integrationRecords:[],legIndex:0,faultLeg,...fixture(scenario),tick:0,stage:0,status:'ready',effects:0,attempts:0,trace:[],deliveries:[],registry:{},operationId:'OP-DEMO-1',runRevision:1,reviewedPayload:JSON.stringify(handoffs(scenario)[0].payload),lastStage:0,repaired:false,message:'Ready. Step through the exchange or press Play.',active:'source',authoritativeOutcome};s.integration=integrationState(s,storageMode);return s;
 }
 function log(s,state,explanation,kind='check',payload) {
  const c=currentScenario(s),reverse=kind==='receipt';
@@ -12,6 +13,10 @@ function log(s,state,explanation,kind='check',payload) {
 function block(s,text,status='denied'){s.status=status;log(s,status,text);return s;}
 export function validate(s){
  const e=s.envelope,a=s.agreement,i=s.identity,m=s.mapping;
+ const design=s.integration;
+ if(design.execution!=='passed (simulated)'||design.protectedAccess!=='allowed (simulated)')return 'Execution verification does not permit protected-data access.';
+ if(design.relationship!=='allowed (simulated)'||!['approved','pre-approved fixture'].includes(design.approval))return 'The relationship or owner decision does not permit this delivery.';
+ if(design.revision.requested!==design.revision.approved||design.translation.status!=='passed (simulated)'||design.business!=='accepted by example rules')return 'Revision, translation or business review is incomplete.';
  if(!i.simulatedSignatureValid||i.expiresAtTick<=s.tick||i.issuer!=='ISSUER-DEMO'||i.audience!=='ADAPTER-DEMO')return 'Identity context is invalid or expired.';
  if(!m.approved||m.tenantId!==e.tenantId||m.actorId!==e.actorId)return 'Actor and tenant mapping do not match.';
  if(!e.recipientId||!e.purpose||e.synthetic!==true||e.origin===e.destination)return 'Message context is incomplete or invalid.';
@@ -31,10 +36,11 @@ function receipt(s){s.stage=7;s.lastStage=7;s.active='source';log(s,'received','
 export function step(s){
  if(!['ready','running','pending'].includes(s.status))return s;
  if(s.stage===8){
- s.legIndex++;const f=fixture(s.scenario,s.legIndex);Object.assign(s,f);s.runRevision=1;s.operationId=`OP-DEMO-H${s.legIndex+1}-1`;s.envelope.operationId=s.operationId;s.envelope.eventId=`EV-REQUEST-H${s.legIndex+1}`;s.envelope.agreementId=`SDA-DEMO-H${s.legIndex+1}`;s.identity.expiresAtTick=s.tick+100;s.agreement.endTick=s.tick+100;s.reviewedPayload=JSON.stringify(currentScenario(s).payload);s.stage=0;s.attempts=0;s.repaired=false;
+ s.integrationRecords.push(structuredClone(s.integration));s.legIndex++;const f=fixture(s.scenario,s.legIndex);Object.assign(s,f);s.runRevision=1;s.operationId=`OP-DEMO-H${s.legIndex+1}-1`;s.envelope.operationId=s.operationId;s.envelope.eventId=`EV-REQUEST-H${s.legIndex+1}`;s.envelope.agreementId=`SDA-DEMO-H${s.legIndex+1}`;s.identity.expiresAtTick=s.tick+100;s.agreement.endTick=s.tick+100;s.reviewedPayload=JSON.stringify(currentScenario(s).payload);s.stage=0;s.attempts=0;s.repaired=false;s.integration=integrationState(s,s.storageMode);
  }
  s.tick++;s.lastStage=s.stage;s.status='running';s.active=s.stage===0?'source':s.stage<6?'adapter':'destination';
  const f=s.repaired||s.legIndex!==s.faultLeg?'none':s.fault;
+ const gate=integrationGate(s,f);if(gate)return block(s,gate.text,gate.status);
  if(s.stage===0&&handoffs(s.scenario).length>1)log(s,'requested',`${currentScenario(s).name}. New owner permission is checked for this handoff; previous permission does not carry over.`,'request');
  if(s.stage===0&&handoffs(s.scenario).length===1)log(s,'requested',`${scenarios[s.scenario].short}. Owner: Aster Components (fictional manufacturer). ${s.scenario==='S01'?'Destination: PCN registration service; Northstar is not a recipient of this packet.':'Recipient: Northstar Review (fictional outside reviewer), through its Mesh-side app.'} Original evidence remains in owner-controlled storage.`,'request');
  if(s.stage===1){if(f==='F01')return block(s,'Identity expired. No permission or write is attempted.');if(f==='F02')return block(s,'Issuer / audience mismatch. This identity context is not trusted.');log(s,'checked','Synthetic issuer, audience, expiry and signature-status checks passed. Sign-in does not grant disclosure permission.');}
@@ -59,21 +65,29 @@ export function recover(s,action){
  s.tick++;const found=s.registry[s.operationId];
  if(found){log(s,'reconciled','Authoritative mock query found the existing commit. Same operation ID; no resend.');receipt(s);}
  else if(s.authoritativeOutcome==='pending'){s.status='review';log(s,'pending','Authoritative mock query is pending. Resend remains disabled; ask the PCN operator to reconcile.');}
- else if(s.authoritativeOutcome==='not-found'){s.repaired=true;s.stage=1;s.status='ready';s.attempts=0;log(s,'not-found','Authoritative mock registry confirms absence. Recheck all gates before resubmitting the same operation.');}
+ else if(s.authoritativeOutcome==='not-found'){repairIntegration(s);s.repaired=true;s.stage=1;s.status='ready';s.attempts=0;log(s,'not-found','Authoritative mock registry confirms absence. Recheck all gates before resubmitting the same operation.');}
  return s;
  }
- if(action==='restore'&&s.status==='review'&&s.fault==='F09'){s.repaired=true;s.stage=1;s.status='ready';s.attempts=0;log(s,'restored','Platform operator restored the destination. Begin a new bounded attempt cycle on the same operation; recheck every gate.');return s;}
+ if(action==='restore'&&s.status==='review'&&s.fault==='F09'){repairIntegration(s);s.repaired=true;s.stage=1;s.status='ready';s.attempts=0;log(s,'restored','Platform operator restored the destination. Begin a new bounded attempt cycle on the same operation; recheck every gate.');return s;}
  if(action==='repair'&&['denied','quarantined'].includes(s.status)){
- s.repaired=true;s.status='ready';s.stage=1;
+ repairIntegration(s);s.repaired=true;s.status='ready';s.stage=1;
  if(['F05','F06','F07'].includes(s.fault)){s.runRevision++;s.operationId=handoffs(s.scenario).length>1?`OP-DEMO-H${s.legIndex+1}-${s.runRevision}`:`OP-DEMO-${s.runRevision}`;s.envelope.operationId=s.operationId;s.envelope.eventId=`EV-REQUEST-${s.runRevision}`;s.envelope.payloadRevision=s.runRevision;s.envelope.digestRef=`DIGEST-DEMO-${String(s.runRevision).padStart(2,'0')}`;s.envelope.agreementId=`SDA-DEMO-${s.runRevision}`;}
- log(s,'review',`${faults.find(f=>f.id===s.fault).role}: ${faults.find(f=>f.id===s.fault).recovery} All gates are checked again.`);
+ log(s,'review',`${s.fault==='none'?'Data owner: reconsider the withdrawn request.':faults.find(f=>f.id===s.fault).role+': '+faults.find(f=>f.id===s.fault).recovery} All gates are checked again.`);
  }return s;
 }
-export function exportTrace(s){return {version:'1.0',synthetic:true,notice:'Teaching simulation; no real credentials, verification, vendor API calls or proof of business truth.',scenario:s.scenario,fault:s.fault,status:s.status,operationId:s.operationId,effects:s.effects,trace:structuredClone(s.trace),deliveries:structuredClone(s.deliveries)};}
+export function decide(s,approve){
+ if(s.status!=='awaiting')return s;
+ s.integration.approval=approve?'approved':'withdrawn';
+ note(s,'approval',approve?'approved':'blocked',approve?'Owner explicitly approved this handoff.':'Owner withdrew this handoff. No delivery.');
+ s.status=approve?'ready':'denied';s.message=approve?'Owner approved. Continue to recheck permission and integrity.':'Owner withdrew permission. No data delivered for this handoff.';
+ log(s,s.status,s.message);return s;
+}
+export function exportTrace(s){return {version:'1.0',synthetic:true,notice:'Teaching simulation; no real credentials, verification, vendor API calls or proof of business truth.',scenario:s.scenario,fault:s.fault,status:s.status,operationId:s.operationId,effects:s.effects,integrationDesign:integrationEvidence(s),trace:structuredClone(s.trace),deliveries:structuredClone(s.deliveries)};}
 
 export function evidenceBundle(s){
  const receipts=s.trace.filter(t=>t.kind==='receipt');
  return {
+  integrationDesign:integrationEvidence(s),
   schemaVersion:'1.0',artifactType:'synthetic-integration-evidence',synthetic:true,
   warning:'Example evidence from a teaching simulation. No real signatures, identity verification, attestation or vendor transactions. This is not proof that a business claim is true.',
   scenario:s.scenario,operationId:s.operationId,correlationId:'RUN-DEMO-1',outcome:s.status,
@@ -81,7 +95,7 @@ export function evidenceBundle(s){
   parties:{owner:{name:organizationName(currentScenario(s).ownerId??'OWNER-DEMO'),role:'Fictional owner of the current handoff’s data'},recipient:s.scenario==='S01'?{name:'PCN registration service',role:'Modeled registration destination; Northstar receives no packet'}:{name:organizationName(currentScenario(s).recipientId??'RECIPIENT-DEMO'),role:'Fictional recipient of the current handoff'}},
   sharingOrganizations:sharingParties(s),
   assetReference:s.envelope.assetId,
-  mechanism:{status:'proposed',transport:'Illustrative HTTPS/JSON through an adapter',nativeVendorContractConfirmed:false},
+  mechanism:{status:'proposed',transport:'Proposed external HTTPS/REST + JSON; illustrative secure agent messages inside Mesh',nativeVendorContractConfirmed:false},
   custody:'Original source evidence remains with the owner. Only the permitted representation is included.',
   authorization:{agreementReference:s.envelope.agreementId,scope:'Modeled checks only; not a signed authorization credential'},
   deliveredRepresentations:structuredClone(s.deliveries),

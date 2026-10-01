@@ -30,3 +30,19 @@ summary{min-height:44px;padding-top:8px}@media(max-width:740px){header{flex-wrap
 .compact-map text{font-size:16px}.compact-map .map-name{font-size:20px}.compact-map .link-caption{font-size:13px}
 @media(min-width:1101px){.compact-map{max-height:300px}#handoff-controls{display:inline-block;width:30%;vertical-align:middle}#handoff-controls>span{display:none}#handoff-plan{display:inline-block;width:69%;vertical-align:middle;padding:5px;margin:7px 0}#handoff-plan li{padding:6px}#stages{padding:10px 16px}#stages b{margin-bottom:4px}.map-hint{margin-bottom:8px;font-size:10px}}
 .compact-map [data-lane^=receipt]{stroke-dasharray:5 5}
+
+/* Integration boundary teaching view */
+.boundary-title{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:16px}
+.trust-route{display:grid;grid-template-columns:1fr 110px 2.3fr;align-items:stretch;gap:12px}
+.external-zone,.mesh-zone{border:1px solid #657584;border-radius:12px;padding:16px;background:#151d24}
+.mesh-zone{border:2px dashed #43d39e;background:#102520}.external-zone strong,.mesh-zone strong{display:block;margin-top:12px}
+.agent-chain{display:grid;grid-template-columns:1fr 100px 1fr;align-items:center;gap:12px}
+.route-link{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:5px;color:#8fcaff;font-size:12px}.route-link b{font-size:36px;line-height:1}.route-link small{color:#c1cbd2}
+body[data-moving=true] .route-moving .route-link b{animation:boundary-pulse 1s infinite alternate}.boundary-note{color:#c1cbd2}
+@keyframes boundary-pulse{from{opacity:.4}to{opacity:1;text-shadow:0 0 12px #62b5ff}}
+.assurance-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:16px 0}.assurance-grid>div{background:#202c35;border-radius:8px;padding:12px}.assurance-grid strong,.assurance-grid small{display:block}.assurance-grid strong{font-size:14px;margin-top:5px}.assurance-grid small{color:#c1cbd2}
+.design-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.design-grid pre{white-space:pre-wrap;overflow-wrap:anywhere}.design-details{margin-bottom:16px}#approval-controls{border:1px solid #43d39e;border-radius:10px;padding:12px;margin-bottom:12px}#approval-controls button{margin:4px 0;min-height:44px}
+@media(max-width:900px){.trust-route{grid-template-columns:1fr}.agent-chain{grid-template-columns:1fr}.route-link{min-height:65px}.assurance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.design-grid{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){body[data-moving=true] .route-moving .route-link b{animation:none}}
+
+@media(min-width:1101px){.handoff-plan ol{grid-template-columns:repeat(3,minmax(0,1fr))}.boundary-title .badge{align-self:center}}
